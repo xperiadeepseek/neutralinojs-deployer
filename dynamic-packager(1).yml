@@ -1,0 +1,86 @@
+name: Dynamic Website Packager
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'Application Name (e.g., ChatGPT, YouTube)'
+        required: true
+        default: 'MyWebApp'
+        type: string
+      website_url:
+        description: 'Website URL (e.g., https://chatgpt.com)'
+        required: true
+        type: string
+
+jobs:
+  build-wrapper:
+    runs-on: ubuntu-latest
+
+    # Inputs are passed through env vars instead of being pasted into the
+    # shell script, so quotes or special characters in them can't break it.
+    env:
+      APP_NAME: ${{ inputs.app_name }}
+      WEBSITE_URL: ${{ inputs.website_url }}
+
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Neutralino CLI
+        run: npm install -g @neutralinojs/neu
+
+      - name: Initialize Project
+        run: neu create wrapper_app
+
+      - name: Configure App for Remote URL
+        run: |
+          cd wrapper_app
+
+          # Ensure the URL has a protocol
+          URL="$WEBSITE_URL"
+          if [[ ! "$URL" =~ ^https?:// ]]; then
+            URL="https://$URL"
+          fi
+
+          jq --arg url "$URL" \
+             --arg title "$APP_NAME" \
+             '.url = $url |
+              .modes.window.url = $url |
+              .enableServer = false |
+              .modes.window.title = $title |
+              .modes.window.width = 1200 |
+              .modes.window.height = 800 |
+              .modes.window.minWidth = 400 |
+              .modes.window.minHeight = 300' neutralino.config.json > tmp.json
+
+          mv tmp.json neutralino.config.json
+
+          # Show the final config in the log so it can be checked
+          cat neutralino.config.json
+
+      - name: Update Core Binaries
+        run: |
+          cd wrapper_app
+          neu update
+
+      # --embed-resources is the actual fix. Without it, neu build writes the
+      # config (and your URL) into a separate resources.neu file. Uploading only
+      # the .exe leaves that file behind, so the exe has no URL to load.
+      - name: Build Executable
+        run: |
+          cd wrapper_app
+          neu build --embed-resources
+
+      - name: Rename Final Executable
+        run: |
+          mkdir -p output
+          cp wrapper_app/dist/wrapper_app/wrapper_app-win_x64.exe "output/${APP_NAME}.exe"
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.app_name }}-Windows
+          path: output/*.exe
