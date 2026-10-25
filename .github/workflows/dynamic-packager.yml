@@ -33,14 +33,22 @@ jobs:
         run: |
           cd wrapper_app
           
-          # Use jq to safely update only the necessary fields, keeping the "cli" block intact
-          jq '.url = "${{ inputs.website_url }}" | 
+          # 1. Ensure the URL has https://
+          URL="${{ inputs.website_url }}"
+          if [[ ! "$URL" =~ ^https?:// ]]; then
+            URL="https://$URL"
+          fi
+          
+          # 2. Update config using the correct .modes.window JSON path
+          jq --arg url "$URL" \
+             --arg title "${{ inputs.app_name }}" \
+             '.url = $url | 
               .enableServer = false | 
-              .window.title = "${{ inputs.app_name }}" | 
-              .window.width = 1200 | 
-              .window.height = 800 |
-              .window.minWidth = 400 |
-              .window.minHeight = 300' neutralino.config.json > tmp.json
+              .modes.window.title = $title | 
+              .modes.window.width = 1200 | 
+              .modes.window.height = 800 |
+              .modes.window.minWidth = 400 |
+              .modes.window.minHeight = 300' neutralino.config.json > tmp.json
           
           mv tmp.json neutralino.config.json
 
@@ -54,8 +62,13 @@ jobs:
           cd wrapper_app
           neu build
 
+      - name: Rename Final Executable
+        run: |
+          cd wrapper_app/dist/wrapper_app
+          mv wrapper_app-win_x64.exe "${{ inputs.app_name }}.exe"
+
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.app_name }}-Windows
-          path: wrapper_app/dist/**/*-win_x64.exe
+          path: wrapper_app/dist/wrapper_app/${{ inputs.app_name }}.exe
