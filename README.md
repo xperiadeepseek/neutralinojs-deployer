@@ -1,4 +1,4 @@
-# Dynamic Website Packager
+# Neutralinojs Deployer
 
 Turn any website into a small Windows `.exe` straight from GitHub. Type an app name and a URL into a GitHub Actions popup, wait about a minute, and download a standalone app that opens that site in its own window.
 
