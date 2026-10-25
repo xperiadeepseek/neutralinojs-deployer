@@ -1,0 +1,11 @@
+{
+  "applicationId": "js.neutralino.myapp",
+  "version": "1.0.0",
+  "defaultMode": "window",
+  "documentRoot": "/",
+  "window": {
+    "title": "My Web App",
+    "width": 800,
+    "height": 600
+  }
+}
