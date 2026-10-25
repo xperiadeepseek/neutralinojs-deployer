@@ -1,0 +1,63 @@
+name: Dynamic Website Packager
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'Application Name (e.g., ChatGPT, YouTube)'
+        required: true
+        default: 'MyWebApp'
+        type: string
+      website_url:
+        description: 'Website URL (e.g., https://chatgpt.com)'
+        required: true
+        type: string
+
+jobs:
+  build-wrapper:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Setup Node.js (Required for Neutralino CLI)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Step 2: Install Neutralino CLI
+      - name: Install Neutralino CLI
+        run: npm install -g @neutralinojs/neu
+
+      # Step 3: Scaffold a fresh Neutralino project
+      - name: Initialize Project
+        run: neu init wrapper_app
+
+      # Step 4: Dynamically generate the config file with user inputs
+      - name: Configure App for Remote URL
+        run: |
+          cd wrapper_app
+          
+          # Overwrite the default config to point to the input URL
+          # enableServer is false because we are serving a remote website, not local files
+          cat <<EOF > neutralino.config.json
+          {
+            "applicationId": "com.dynamic.wrapper",
+            "version": "1.0.0",
+            "defaultMode": "window",
+            "url": "${{ inputs.website_url }}",
+            "enableServer": false,
+            "window": {
+              "title": "${{ inputs.app_name }}",
+              "width": 1200,
+              "height": 800,
+              "minWidth": 400,
+              "minHeight": 300
+            }
+          }
+          EOF
+
+      # Step 5: Download core binaries for the wrapper
+      - name: Update Core Binaries
+        run: |
+          cd wrapper_app
+          neu update
