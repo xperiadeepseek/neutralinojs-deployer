@@ -50,6 +50,7 @@ jobs:
              '.url = $url |
               .modes.window.url = $url |
               .enableServer = false |
+              .modes.window.enableInspector = false |
               .modes.window.title = $title |
               .modes.window.width = 1200 |
               .modes.window.height = 800 |
