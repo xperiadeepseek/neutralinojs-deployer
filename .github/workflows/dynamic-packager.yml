@@ -39,10 +39,11 @@ jobs:
             URL="https://$URL"
           fi
           
-          # 2. Update config using the correct .modes.window JSON path
+          # 2. Update config to overwrite both the root url AND the window mode url
           jq --arg url "$URL" \
              --arg title "${{ inputs.app_name }}" \
              '.url = $url | 
+              .modes.window.url = $url |
               .enableServer = false | 
               .modes.window.title = $title | 
               .modes.window.width = 1200 | 
