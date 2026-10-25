@@ -12,6 +12,11 @@ on:
         description: 'Website URL (e.g., https://chatgpt.com)'
         required: true
         type: string
+      fullscreen:
+        description: 'Start in fullscreen mode (like pressing F11)'
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   build-wrapper:
@@ -22,6 +27,7 @@ jobs:
     env:
       APP_NAME: ${{ inputs.app_name }}
       WEBSITE_URL: ${{ inputs.website_url }}
+      FULLSCREEN: ${{ inputs.fullscreen }}
 
     steps:
       - name: Setup Node.js
@@ -47,10 +53,12 @@ jobs:
 
           jq --arg url "$URL" \
              --arg title "$APP_NAME" \
+             --argjson fs "$FULLSCREEN" \
              '.url = $url |
               .modes.window.url = $url |
               .enableServer = false |
               .modes.window.enableInspector = false |
+              .modes.window.fullScreen = $fs |
               .modes.window.title = $title |
               .modes.window.width = 1200 |
               .modes.window.height = 800 |
