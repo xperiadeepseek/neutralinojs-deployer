@@ -32,22 +32,17 @@ jobs:
       - name: Configure App for Remote URL
         run: |
           cd wrapper_app
-          cat <<EOF > neutralino.config.json
-          {
-            "applicationId": "com.dynamic.wrapper",
-            "version": "1.0.0",
-            "defaultMode": "window",
-            "url": "${{ inputs.website_url }}",
-            "enableServer": false,
-            "window": {
-              "title": "${{ inputs.app_name }}",
-              "width": 1200,
-              "height": 800,
-              "minWidth": 400,
-              "minHeight": 300
-            }
-          }
-          EOF
+          
+          # Use jq to safely update only the necessary fields, keeping the "cli" block intact
+          jq '.url = "${{ inputs.website_url }}" | 
+              .enableServer = false | 
+              .window.title = "${{ inputs.app_name }}" | 
+              .window.width = 1200 | 
+              .window.height = 800 |
+              .window.minWidth = 400 |
+              .window.minHeight = 300' neutralino.config.json > tmp.json
+          
+          mv tmp.json neutralino.config.json
 
       - name: Update Core Binaries
         run: |
