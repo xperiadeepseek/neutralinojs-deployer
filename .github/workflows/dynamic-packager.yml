@@ -18,27 +18,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Setup Node.js (Required for Neutralino CLI)
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      # Step 2: Install Neutralino CLI
       - name: Install Neutralino CLI
         run: npm install -g @neutralinojs/neu
 
-      # Step 3: Scaffold a fresh Neutralino project
       - name: Initialize Project
-        run: neu init wrapper_app
+        run: neu create wrapper_app
 
-      # Step 4: Dynamically generate the config file with user inputs
       - name: Configure App for Remote URL
         run: |
           cd wrapper_app
-          
-          # Overwrite the default config to point to the input URL
-          # enableServer is false because we are serving a remote website, not local files
           cat <<EOF > neutralino.config.json
           {
             "applicationId": "com.dynamic.wrapper",
@@ -56,8 +49,18 @@ jobs:
           }
           EOF
 
-      # Step 5: Download core binaries for the wrapper
       - name: Update Core Binaries
         run: |
           cd wrapper_app
           neu update
+
+      - name: Build Executable
+        run: |
+          cd wrapper_app
+          neu build
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.app_name }}-Windows
+          path: wrapper_app/dist/**/*-win_x64.exe
