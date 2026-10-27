@@ -1,0 +1,239 @@
+name: Dynamic Website Packager
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'Application Name (e.g., ChatGPT, YouTube)'
+        required: true
+        default: 'MyWebApp'
+        type: string
+      website_url:
+        description: 'Website URL (e.g., https://chatgpt.com)'
+        required: true
+        type: string
+      fullscreen:
+        description: 'Start in fullscreen mode (like pressing F11)'
+        required: false
+        default: true
+        type: boolean
+      external_links_in_browser:
+        description: 'Keep the app on its own site: open links to other sites (e.g. YouTube) in the default browser'
+        required: false
+        default: true
+        type: boolean
+      allowed_domains:
+        description: 'Extra domains that must stay inside the app, comma-separated (e.g. login or SSO domains)'
+        required: false
+        default: ''
+        type: string
+      save_downloads_in_relative_path:
+        description: 'save downalds in relative path'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build-wrapper:
+    runs-on: ubuntu-latest
+
+    env:
+      APP_NAME: ${{ inputs.app_name }}
+      WEBSITE_URL: ${{ inputs.website_url }}
+      FULLSCREEN: ${{ inputs.fullscreen }}
+      EXTERNAL_IN_BROWSER: ${{ inputs.external_links_in_browser }}
+      ALLOWED_DOMAINS: ${{ inputs.allowed_domains }}
+      RELATIVE_DOWNLOADS: ${{ inputs.save_downloads_in_relative_path }}
+
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Neutralino CLI
+        run: npm install -g @neutralinojs/neu
+
+      - name: Initialize Project
+        run: neu create wrapper_app
+
+      - name: Configure App for Remote URL
+        run: |
+          cd wrapper_app
+
+          URL="$WEBSITE_URL"
+          if [[ ! "$URL" =~ ^https?:// ]]; then
+            URL="https://$URL"
+          fi
+
+          if [ "$EXTERNAL_IN_BROWSER" = "true" ]; then
+            CONFIG=$(jq -cn --arg site "$URL" --arg extra "$ALLOWED_DOMAINS" \
+              '{site: $site, extra: ($extra | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)))}')
+
+            printf '(function () {\n  "use strict";\n  var CFG = %s;\n' "$CONFIG" > resources/js/external-links.js
+            cat >> resources/js/external-links.js <<'JSEOF'
+
+            if (window.top !== window.self) return;
+
+            var MULTI = {
+              'co.uk': 1, 'org.uk': 1, 'ac.uk': 1, 'gov.uk': 1,
+              'com.au': 1, 'net.au': 1, 'org.au': 1, 'co.nz': 1,
+              'co.in': 1, 'net.in': 1, 'org.in': 1,
+              'co.jp': 1, 'ne.jp': 1, 'or.jp': 1, 'co.kr': 1,
+              'com.br': 1, 'com.mx': 1, 'com.ar': 1,
+              'com.cn': 1, 'com.hk': 1, 'com.sg': 1, 'com.tw': 1,
+              'com.tr': 1, 'co.za': 1
+            };
+
+            function baseDomain(host) {
+              host = String(host || '').toLowerCase().replace(/^\.+|\.+$/g, '');
+              if (!host || host === 'localhost' || host.indexOf(':') !== -1 || /^[\d.]+$/.test(host)) return host;
+              var parts = host.split('.');
+              if (parts.length <= 2) return host;
+              var last2 = parts.slice(-2).join('.');
+              return MULTI[last2] ? parts.slice(-3).join('.') : last2;
+            }
+
+            function toHost(value) {
+              value = String(value || '').trim();
+              if (!value) return '';
+              try {
+                return new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : 'https://' + value).hostname;
+              } catch (e) {
+                return '';
+              }
+            }
+
+            var allowed = [];
+            [CFG.site].concat(CFG.extra || []).forEach(function (v) {
+              var d = baseDomain(toHost(v));
+              if (d && allowed.indexOf(d) === -1) allowed.push(d);
+            });
+
+            function isInternal(host) {
+              return allowed.indexOf(baseDomain(host)) !== -1;
+            }
+
+            function resolve(href) {
+              try {
+                var u = new URL(href, document.baseURI || location.href);
+                return (u.protocol === 'http:' || u.protocol === 'https:') ? u : null;
+              } catch (e) {
+                return null;
+              }
+            }
+
+            function navigate(url) { location.assign(url); }
+
+            var nativeOpen = window.open;
+
+            function openExternal(url) { nativeOpen.call(window, url, '_blank', 'noopener'); }
+
+            function isAnchor(n) {
+              return n && n.nodeType === 1 && String(n.tagName).toLowerCase() === 'a' && n.hasAttribute('href');
+            }
+
+            function findAnchor(e) {
+              var path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+              for (var i = 0; i < path.length; i++) {
+                if (isAnchor(path[i])) return path[i];
+              }
+              var t = e.target;
+              while (t && t !== document) {
+                if (isAnchor(t)) return t;
+                t = t.parentNode;
+              }
+              return null;
+            }
+
+            function onClick(e) {
+              if (e.button !== 0 && e.button !== 1) return;
+              var a = findAnchor(e);
+              if (!a || a.hasAttribute('download')) return;
+
+              var href = a.href;
+              if (href && typeof href === 'object' && 'baseVal' in href) href = href.baseVal;
+              var u = resolve(href);
+              if (!u) return;
+
+              if (isInternal(u.hostname)) {
+                var target = (a.getAttribute('target') || '').toLowerCase();
+                var wantsNew = (target && ['_self', '_parent', '_top'].indexOf(target) === -1) ||
+                               e.button === 1 || e.ctrlKey || e.shiftKey || e.metaKey;
+                if (wantsNew && !e.altKey) {
+                  e.preventDefault();
+                  e.stopImmediatePropagation();
+                  navigate(u.href);
+                }
+                return;
+              }
+
+              e.preventDefault();
+              e.stopImmediatePropagation();
+              openExternal(u.href);
+            }
+
+            window.addEventListener('click', onClick, true);
+            window.addEventListener('auxclick', onClick, true);
+
+            window.open = function (url) {
+              if (url != null && url !== '') {
+                var u = resolve(String(url));
+                if (u && isInternal(u.hostname)) {
+                  navigate(u.href);
+                  return null;
+                }
+              }
+              return nativeOpen.apply(window, arguments);
+            };
+          })();
+          JSEOF
+          fi
+
+          jq --arg url "$URL" \
+             --arg title "$APP_NAME" \
+             --argjson fs "$FULLSCREEN" \
+             --argjson ext "$EXTERNAL_IN_BROWSER" \
+             --argjson rel "$RELATIVE_DOWNLOADS" \
+             '.url = $url |
+              .modes.window.url = $url |
+              .enableServer = false |
+              .modes.window.enableInspector = false |
+              .modes.window.fullScreen = $fs |
+              (if $ext then
+                 .modes.window.newWindowPolicy = "browser" |
+                 .modes.window.injectScript = "/resources/js/external-links.js"
+               else . end) |
+              (if $rel then
+                 .modes.window.processArgs = "--download.default_directory=." |
+                 .modes.window.additionalBrowserArgs = "--download.default_directory=."
+               else . end) |
+              .modes.window.title = $title |
+              .modes.window.width = 1200 |
+              .modes.window.height = 800 |
+              .modes.window.minWidth = 400 |
+              .modes.window.minHeight = 300' neutralino.config.json > tmp.json
+
+          mv tmp.json neutralino.config.json
+          cat neutralino.config.json
+
+      - name: Update Core Binaries
+        run: |
+          cd wrapper_app
+          neu update
+
+      - name: Build Executable
+        run: |
+          cd wrapper_app
+          neu build --embed-resources
+
+      - name: Rename Final Executable
+        run: |
+          mkdir -p output
+          cp wrapper_app/dist/wrapper_app/wrapper_app-win_x64.exe "output/${APP_NAME}.exe"
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.app_name }}-Windows
+          path: output/*.exe
